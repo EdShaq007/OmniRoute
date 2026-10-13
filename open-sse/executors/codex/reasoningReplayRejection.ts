@@ -14,6 +14,17 @@ const MAX_MESSAGE_LENGTH = 2_000;
 const REPLAY_MESSAGE_PATTERN =
   /\bencrypted[ _]content\b.{0,200}\bcould not be (?:verified|decrypted)\b/i;
 
+/**
+ * Whether a captured upstream diagnostic text is a replayed-reasoning
+ * rejection. The streaming readiness gate (streamReadiness.ts) sees only the
+ * sanitized message — no HTTP status and no structured `code` — so the
+ * message pattern is the classifier there, and the surfaced code is the same
+ * stable `invalid_encrypted_content` the non-streaming 400 path returns.
+ */
+export function matchesReasoningReplayRejectionMessage(text: string): boolean {
+  return REPLAY_MESSAGE_PATTERN.test(text);
+}
+
 export async function readCodexReasoningReplayRejection(
   response: Response
 ): Promise<{ message: string } | null> {
