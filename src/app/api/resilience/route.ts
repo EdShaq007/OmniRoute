@@ -4,6 +4,7 @@ import { getSettings, updateSettings } from "@/lib/db/settings";
 import {
   buildLegacyResilienceCompat,
   mergeResilienceSettings,
+  pruneResilienceSettingsToProvided,
   resolveResilienceSettings,
   type ResilienceSettings,
   type ResilienceSettingsPatch,
@@ -186,8 +187,16 @@ export async function PATCH(request) {
 
     const body = validation.data as JsonRecord;
     const currentSettings = await getSettings();
-    const currentResilience = resolveResilienceSettings(currentSettings);
-    const nextResilience = mergeResilienceSettings(currentResilience, {
+    // Store only operator-provided values: merge the patch over the resolved
+    // view of the stored partial (legacy top-level keys included), then prune
+    // every leaf that still equals the fresh default so absent keys keep
+    // following the environment and flags on every read.
+    const storedResilience = asRecord(currentSettings.resilienceSettings);
+    const sparseBase = resolveResilienceSettings({
+      ...currentSettings,
+      resilienceSettings: storedResilience,
+    });
+    const mergedFull = mergeResilienceSettings(sparseBase, {
       ...(body.requestQueue
         ? { requestQueue: body.requestQueue as ResilienceSettingsPatch["requestQueue"] }
         : {}),
@@ -249,9 +258,17 @@ export async function PATCH(request) {
         : {}),
       ...normalizeLegacyPatch(body),
     });
+    const nextSparse = pruneResilienceSettingsToProvided(
+      mergedFull,
+      resolveResilienceSettings(null)
+    );
+    const nextResilience = resolveResilienceSettings({
+      ...currentSettings,
+      resilienceSettings: nextSparse,
+    });
 
     await updateSettings({
-      resilienceSettings: nextResilience,
+      resilienceSettings: nextSparse,
       requestRetry: nextResilience.waitForCooldown.maxRetries,
       maxRetryIntervalSec: nextResilience.waitForCooldown.maxRetryWaitSec,
     });
@@ -263,9 +280,9 @@ export async function PATCH(request) {
     // `null` (PATCH input) → undefined (stored) is correctly detected as
     // "unset request" when the previous stored value was a boolean.
     const breakerHintsChanged =
-      currentResilience.connectionCooldown.oauth.useUpstream429BreakerHints !==
+      sparseBase.connectionCooldown.oauth.useUpstream429BreakerHints !==
         nextResilience.connectionCooldown.oauth.useUpstream429BreakerHints ||
-      currentResilience.connectionCooldown.apikey.useUpstream429BreakerHints !==
+      sparseBase.connectionCooldown.apikey.useUpstream429BreakerHints !==
         nextResilience.connectionCooldown.apikey.useUpstream429BreakerHints;
     if (breakerHintsChanged) {
       resetAllCircuitBreakers();
