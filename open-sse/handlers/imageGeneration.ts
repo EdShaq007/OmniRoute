@@ -37,6 +37,7 @@ import {
   resolveComfyUiBaseUrl,
 } from "../utils/comfyuiClient.ts";
 import { fetchUntrustedRemoteImage } from "@/shared/network/remoteImageFetch";
+import { sniffImageMime } from "./imageUpscale/shared.ts";
 import {
   FetchTimeoutError,
   fetchWithTimeout,
@@ -1110,6 +1111,7 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
     image_size: body.image_size ?? null,
     image_size_applied: imageSize ?? "default",
     n: candidateCount,
+    reference_images: 0,
   };
 
   if (!projectId || typeof projectId !== "string") {
@@ -1124,7 +1126,38 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
     });
   }
 
-  const inlineImage = geminiInlineImagePart(body);
+  // Every reference image (subject, place, style) goes before the prompt as an inlineData
+  // part, in request order — not only the first one — so "image 1 / image 2" prompts work.
+  // geminiInlineImagePart stays as the fallback for /v1/images/edits (imageBytes).
+  const { imageUrls: referenceImageUrls } = extractImageInputs(body);
+  let referenceParts: Array<{ inlineData: { mimeType: string; data: string } }>;
+  try {
+    referenceParts = await Promise.all(
+      referenceImageUrls.map(async (source) => {
+        const { buffer, base64, contentType } = await resolveImageSource(source);
+        const mimeType =
+          typeof contentType === "string" && contentType.startsWith("image/")
+            ? contentType
+            : sniffImageMime(buffer);
+        return { inlineData: { mimeType, data: base64 } };
+      })
+    );
+  } catch (err: unknown) {
+    return saveImageErrorResult({
+      provider,
+      model,
+      status: 400,
+      startTime,
+      error: `Invalid reference image: ${err instanceof Error ? err.message : String(err)}`,
+      requestBody: logRequestBody,
+    });
+  }
+  if (referenceParts.length > 0) {
+    logRequestBody.reference_images = referenceParts.length;
+  }
+
+  const inlineImage = referenceParts.length === 0 ? geminiInlineImagePart(body) : null;
+
   const antigravityBody = {
     project: projectId,
     requestId: `image_gen/${Date.now()}/${randomUUID()}/0`,
@@ -1132,7 +1165,7 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
       contents: [
         {
           role: "user",
-          parts: [...(inlineImage ? [inlineImage] : []), { text: promptText }],
+          parts: [...referenceParts, ...(inlineImage ? [inlineImage] : []), { text: promptText }],
         },
       ],
       generationConfig: {

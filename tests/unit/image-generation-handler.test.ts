@@ -867,6 +867,137 @@ test("handleImageGeneration sends Antigravity image requests without billing pro
   }
 });
 
+test("handleImageGeneration sends Antigravity reference images as inlineData before the prompt", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const jpegBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString("base64");
+
+  globalThis.fetch = async (_url, options = {}) => {
+    calls.push(JSON.parse(String(options.body || "{}")));
+    return new Response(
+      JSON.stringify({
+        response: {
+          candidates: [
+            { content: { parts: [{ inlineData: { mimeType: "image/png", data: "b3V0" } }] } },
+          ],
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const result = await handleImageGeneration({
+      body: {
+        model: "antigravity/gemini-3.1-flash-image",
+        prompt: "put the person from image 1 in the place from image 2",
+        image: "data:image/webp;base64,UklGRg==",
+        image_urls: [jpegBase64],
+      },
+      credentials: { accessToken: "ag-token", projectId: "project-123" },
+      log: null,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].request.contents[0].parts, [
+      { inlineData: { mimeType: "image/webp", data: "UklGRg==" } },
+      { inlineData: { mimeType: "image/jpeg", data: jpegBase64 } },
+      { text: "put the person from image 1 in the place from image 2" },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handleImageGeneration logs the Antigravity reference count without the image bytes", async () => {
+  const { getCallLogs, getCallLogById } = await import("../../src/lib/usage/callLogs.ts");
+  const originalFetch = globalThis.fetch;
+  const refBase64 = Buffer.from("reference-bytes-that-must-not-be-logged").toString("base64");
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ response: { candidates: [] } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  try {
+    await handleImageGeneration({
+      body: {
+        model: "antigravity/gemini-3.1-flash-image-logref",
+        prompt: "two references",
+        image_urls: [`data:image/jpeg;base64,${refBase64}`, `data:image/png;base64,${refBase64}`],
+      },
+      credentials: { accessToken: "ag-token", projectId: "project-123" },
+      log: null,
+    });
+
+    let row = null;
+    for (let i = 0; i < 100 && !row; i++) {
+      const rows = await getCallLogs({ model: "gemini-3.1-flash-image-logref", limit: 1 });
+      if (rows[0]?.id) row = await getCallLogById(rows[0].id);
+      else await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.ok(row, "call log row was written");
+    const logged = JSON.stringify(row.requestBody);
+    assert.match(logged, /"reference_images":2/);
+    assert.equal(logged.includes(refBase64), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handleImageGeneration keeps Antigravity text-only requests unchanged", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (_url, options = {}) => {
+    calls.push(JSON.parse(String(options.body || "{}")));
+    return new Response(JSON.stringify({ response: { candidates: [] } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    await handleImageGeneration({
+      body: { model: "antigravity/gemini-3.1-flash-image", prompt: "painted forest" },
+      credentials: { accessToken: "ag-token", projectId: "project-123" },
+      log: null,
+    });
+    assert.deepEqual(calls[0].request.contents[0].parts, [{ text: "painted forest" }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handleImageGeneration rejects an unreachable Antigravity reference image before calling upstream", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamCalls = 0;
+  mockFetch(async () => {
+    upstreamCalls += 1;
+    return new Response("not found", { status: 404 });
+  });
+
+  try {
+    const result = await handleImageGeneration({
+      body: {
+        model: "antigravity/gemini-3.1-flash-image",
+        prompt: "painted forest",
+        image: "https://example.com/missing.png",
+      },
+      credentials: { accessToken: "ag-token", projectId: "project-123" },
+      log: null,
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.status, 400);
+    assert.match(String(result.error), /Invalid reference image/);
+    assert.equal(upstreamCalls, 1, "only the reference download is attempted, not Antigravity");
+  } finally {
+    globalThis.fetch = originalFetch;
+    setPinnedFetchTestOverride(null);
+  }
+});
+
 test("handleImageGeneration sanitizes Antigravity upstream error payloads", async () => {
   const originalFetch = globalThis.fetch;
 
