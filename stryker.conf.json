@@ -43,6 +43,7 @@
   "tap": {
     "testFiles": [
       "tests/unit/responses-refusal-preservation.test.ts",
+      "tests/unit/pre-dispatch-error-route-meta.test.ts",
       "tests/unit/codex-overload-scope.test.ts",
       "tests/unit/responses-keepalive-error-frame-nested.test.ts",
       "tests/unit/search-internal-error-sanitization-15159.test.ts",

@@ -220,6 +220,7 @@ import {
   updatePendingScope,
 } from "@/lib/usage/pendingRequestScope";
 import { recordChatCallCost, buildCostCtx } from "@/domain/costRules";
+import { attachOmniRouteMetaToResponse as attachRouteMeta } from "@/domain/omnirouteResponseMeta";
 import { calculateCost } from "@/lib/usage/costCalculator";
 import { buildClaudePassthroughToolNameMap } from "./chatCore/passthroughToolNames.ts";
 import {
@@ -3128,12 +3129,13 @@ async function handleChatCoreInner({
         // FIX 5: tag this as a per-API-key token-limit breach (errorCode
         // TOKEN_LIMIT_EXCEEDED) so the combo loop can distinguish it from an
         // upstream 429 and NOT cool shared accounts / retry it transiently.
-        return createErrorResult(
+        const rejected = createErrorResult(
           HTTP_STATUS.RATE_LIMITED,
           `Token limit exceeded for ${scopeLabel}: ${tokenBreach.tokensUsed}/${tokenBreach.limitValue} tokens used in the current window. Please try again later.`,
           null,
           "TOKEN_LIMIT_EXCEEDED"
         );
+        return { ...rejected, response: attachRouteMeta(rejected.response, { provider, model }) };
       }
     } catch (err) {
       // Fail-open at Tier 2: Tier 1 already enforced the model/global limit pre-dispatch.
@@ -3149,12 +3151,13 @@ async function handleChatCoreInner({
     try {
       if (isTpmExhausted(effectiveModel)) {
         trackPendingRequest(model, provider, pendingConnId, false, undefined, pendingRequestId);
-        return createErrorResult(
+        const rejected = createErrorResult(
           HTTP_STATUS.RATE_LIMITED,
           `Gemini TPM rate limit reached for ${effectiveModel}. Please try again later.`,
           null,
           "GEMINI_TPM_EXHAUSTED"
         );
+        return { ...rejected, response: attachRouteMeta(rejected.response, { provider, model }) };
       }
     } catch (err) {
       log?.warn?.("GEMINI_RATE_LIMIT", "Pre-dispatch TPM check failed; allowing request", { err });
