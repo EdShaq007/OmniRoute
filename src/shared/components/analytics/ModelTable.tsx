@@ -9,6 +9,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import Card from "../Card";
+import CachedInputTokens from "../CachedInputTokens";
 import { getModelColor } from "@/shared/constants/colors";
 import { fmtCompact as fmt, fmtFull, fmtCost } from "@/shared/utils/formatting";
 import {
@@ -136,6 +137,12 @@ export function ModelTable({ byModel, summary, displayMode = "compact" }: ModelT
                   }
                 >
                   {displayMode === "exact" ? fmtFull(m.promptTokens) : fmt(m.promptTokens)}
+                  {m.cachedInputTokens !== undefined && (
+                    <CachedInputTokens
+                      value={m.cachedInputTokens as number | null}
+                      complete={m.cachedInputTokensComplete as boolean}
+                    />
+                  )}
                 </td>
                 <td
                   className="px-4 py-2.5 text-right font-mono text-emerald-500"
