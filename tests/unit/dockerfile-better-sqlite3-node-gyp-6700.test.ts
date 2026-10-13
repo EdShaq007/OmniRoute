@@ -40,11 +40,14 @@ function builderStageRange(): { start: number; end: number } {
 
 test("#6700 builder stage compiles better-sqlite3 via a direct node-gyp rebuild, not `npm rebuild`", () => {
   const { start, end } = builderStageRange();
-  const stage = lines.slice(start, end).join("\n");
+  const stage = lines
+    .slice(start, end)
+    .filter((line) => !line.trim().startsWith("#"))
+    .join("\n");
 
   assert.match(
     stage,
-    /cd node_modules\/better-sqlite3\s*(\\\s*)?&&\s*(npx\s+(--yes\s+)?node-gyp|node \/usr\/local\/lib\/node_modules\/npm\/node_modules\/node-gyp\/bin\/node-gyp\.js) rebuild/,
+    /\(cd node_modules\/better-sqlite3\b[^)]*&&\s*(npx\s+(--yes\s+)?node-gyp|node \/usr\/local\/lib\/node_modules\/npm\/node_modules\/node-gyp\/bin\/node-gyp\.js) rebuild/,
     "builder stage must compile better-sqlite3 by invoking node-gyp directly inside its " +
       "package directory (bypasses npm's rebuild-script indirection)"
   );

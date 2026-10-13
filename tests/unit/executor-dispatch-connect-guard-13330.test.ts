@@ -8,12 +8,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import dns from "node:dns";
+import { Agent, type Dispatcher } from "undici";
 
 import { dispatchGuarded } from "../../open-sse/executors/dispatchPin.ts";
-import { runWithDirectFetchContext } from "../../open-sse/utils/proxyFetch.ts";
+import { getOriginalFetch, runWithDirectFetchContext } from "../../open-sse/utils/proxyFetch.ts";
 import {
   CONNECT_GUARD_BLOCKED_CODE,
   createGuardedLookup,
+  getGuardedDispatcher,
 } from "../../open-sse/utils/connectGuardDispatcher.ts";
 
 const ENV_KEYS = [
@@ -83,8 +85,10 @@ function stubGlobalFetch() {
   };
 }
 
-async function withHttpServer(fn: (port: number) => Promise<void>) {
+async function withHttpServer(fn: (port: number, requests: () => number) => Promise<void>) {
+  let requestCount = 0;
   const server = http.createServer((_req, res) => {
+    requestCount++;
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("guarded-dispatch-response");
   });
@@ -95,7 +99,7 @@ async function withHttpServer(fn: (port: number) => Promise<void>) {
   const address = server.address();
   assert.ok(address && typeof address === "object");
   try {
-    await fn((address as { port: number }).port);
+    await fn((address as { port: number }).port, () => requestCount);
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -293,6 +297,87 @@ test("REAL fetch: an operator host resolving to an allowed address connects thro
     });
   } finally {
     dnsStub.restore();
+  }
+});
+
+test(
+  "native fetch after an ambient reset preserves guarded success and metadata refusal",
+  { timeout: 5_000 },
+  async () => {
+    const savedFetch = globalThis.fetch;
+    globalThis.fetch = getOriginalFetch();
+    const dnsStub = stubDnsLookup("127.0.0.1");
+    try {
+      await withEnv({}, async () => {
+        await withHttpServer(async (port, requests) => {
+          const response = await dispatchGuarded(
+            "openai",
+            `http://native-host.invalid:${port}/v1`,
+            {
+              signal: AbortSignal.timeout(2_000),
+            },
+            OPERATOR
+          );
+          assert.equal(response.status, 200);
+          assert.equal(await response.text(), "guarded-dispatch-response");
+          assert.equal(requests(), 1);
+        });
+      });
+    } finally {
+      dnsStub.restore();
+      globalThis.fetch = savedFetch;
+    }
+    const metadataDns = stubDnsLookup("169.254.169.254");
+    globalThis.fetch = getOriginalFetch();
+    try {
+      await withEnv({}, async () => {
+        await assert.rejects(
+          () =>
+            dispatchGuarded(
+              "openai",
+              "http://native-metadata.invalid:81/v1",
+              {
+                signal: AbortSignal.timeout(2_000),
+              },
+              OPERATOR
+            ),
+          (error: unknown) => {
+            assert.equal(
+              (error as { cause?: { code?: string } }).cause?.code,
+              CONNECT_GUARD_BLOCKED_CODE
+            );
+            return true;
+          }
+        );
+      });
+    } finally {
+      metadataDns.restore();
+      globalThis.fetch = savedFetch;
+    }
+  }
+);
+
+test("guarded dispatcher passes modern handlers and HTTP2 options through unchanged", () => {
+  const originalDispatch = Agent.prototype.dispatch;
+  const handler: Dispatcher.DispatchHandler = { onRequestStart() {} };
+  const options: Dispatcher.DispatchOptions & { allowH2: boolean } = {
+    origin: "https://modern.invalid",
+    path: "/",
+    method: "GET",
+    allowH2: true,
+  };
+  let calls = 0;
+  Agent.prototype.dispatch = function (seenOptions, seenHandler) {
+    calls++;
+    assert.equal(seenOptions, options);
+    assert.equal(seenHandler, handler);
+    return true;
+  };
+  try {
+    assert.equal(getGuardedDispatcher("public-only").dispatch(options, handler), true);
+    assert.equal(calls, 1);
+  } finally {
+    Agent.prototype.dispatch = originalDispatch;
   }
 });
 

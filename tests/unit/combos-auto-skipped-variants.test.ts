@@ -88,7 +88,7 @@ test.after(() => {
 });
 
 test("stays quiet when every variant builds", async () => {
-  await settingsDb.updateSettings({ requireLogin: false });
+  await settingsDb.updateSettings({ requireLogin: false, excludeTosAvoid: false });
   restorePacks();
 
   const watcher = watchWarnings();
@@ -103,7 +103,7 @@ test("stays quiet when every variant builds", async () => {
 });
 
 async function expectSkipped(pack: string, ids: string[], notIds: string[] = []): Promise<void> {
-  await settingsDb.updateSettings({ requireLogin: false });
+  await settingsDb.updateSettings({ requireLogin: false, excludeTosAvoid: false });
   restorePacks();
   const { combos: baseline } = await callRoute();
   for (const id of ids) assert.ok(baseline.map((combo) => combo.id).includes(id));
@@ -140,7 +140,7 @@ test("logs one line naming the skipped tiered suffix variant", async () => {
 });
 
 test("a variant that fails once and builds in a later loop is kept and not reported", async () => {
-  await settingsDb.updateSettings({ requireLogin: false });
+  await settingsDb.updateSettings({ requireLogin: false, excludeTosAvoid: false });
   restorePacks();
   let calls = 0;
   Object.defineProperty(PACKS, "offline-friendly", {
@@ -164,7 +164,7 @@ test("a variant that fails once and builds in a later loop is kept and not repor
 });
 
 test("keeps the payload identical to the unfixed baseline", async () => {
-  await settingsDb.updateSettings({ requireLogin: false });
+  await settingsDb.updateSettings({ requireLogin: false, excludeTosAvoid: false });
   restorePacks();
   const { combos } = await callRoute();
   const ids = combos.map((combo) => combo.id);
@@ -174,7 +174,7 @@ test("keeps the payload identical to the unfixed baseline", async () => {
 });
 
 test("logs the first error on a single bounded line", async () => {
-  await settingsDb.updateSettings({ requireLogin: false });
+  await settingsDb.updateSettings({ requireLogin: false, excludeTosAvoid: false });
   restorePacks();
   poisonPack("offline-friendly", `first\nsecond\tline ${"x".repeat(1000)}`);
   const watcher = watchWarnings();

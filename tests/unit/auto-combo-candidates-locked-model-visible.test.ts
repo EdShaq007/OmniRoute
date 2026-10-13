@@ -25,6 +25,7 @@ process.env.DATA_DIR = TEST_DATA_DIR;
 
 const core = await import("../../src/lib/db/core.ts");
 const providersDb = await import("../../src/lib/db/providers.ts");
+const settingsDb = await import("../../src/lib/db/settings.ts");
 const candidateHandler = await import("../../open-sse/handlers/autoComboCandidates.ts");
 const accountFallback = await import("../../open-sse/services/accountFallback.ts");
 
@@ -55,6 +56,7 @@ async function seedConnections() {
 
 test.beforeEach(async () => {
   await resetStorage();
+  await settingsDb.updateSettings({ excludeTosAvoid: false });
   accountFallback.clearAllModelLockouts();
 });
 
@@ -75,13 +77,7 @@ test("a model-locked account row stays in the listing with reachable:false + mod
 
   // Lock a single model on a single account — the bare model id, matching
   // every real lock writer (accountFallback.ts, resilienceCandidateFilter.ts).
-  accountFallback.lockModel(
-    "antigravity",
-    first.id,
-    "claude-sonnet-4-6",
-    "rate_limit",
-    60_000
-  );
+  accountFallback.lockModel("antigravity", first.id, "claude-sonnet-4-6", "rate_limit", 60_000);
 
   const result = await candidateHandler.getAutoComboCandidates("auto", null);
   const sonnetRows = result.candidates.filter(

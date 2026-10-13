@@ -5,8 +5,8 @@
  * the #6640/#7204/#7871/#8430 contracts stay untouched in "auto" (the default):
  * - "describe": never whole-request-reroutes — straight to the describe path.
  * - "reroute": skips only the keep-credentialed-model guard; the reroute-target
- *   credential guard still applies, and with no usable target it falls back to
- *   describe (raw images must never reach a text-only backend — #8430).
+ *   credential guard still applies, and with no usable target it blocks without
+ *   replacing the original image bytes with a description.
  *
  * Uses dependency injection for settings/vision calls/credentials. The model
  * capability lookup inside preCall still opens the real (isolated) SQLite DB,
@@ -75,7 +75,7 @@ test("mode=describe: never reroutes even when a reroute target exists", async ()
   assert.equal(meta.imagesProcessed, 1, "the image must be described instead");
 });
 
-test("mode=reroute: falls back to describe when no reroute target has credentials", async () => {
+test("mode=reroute: blocks losslessly when no reroute target has credentials", async () => {
   const describeCalls: string[] = [];
   const guardrail = new VisionBridgeGuardrail({
     deps: {
@@ -90,11 +90,15 @@ test("mode=reroute: falls back to describe when no reroute target has credential
   });
 
   const body = imageBody("mode-reroute-fallback-test");
+  const original = structuredClone(body);
   const result = await guardrail.preCall(body, { model: TEXT_ONLY_MODEL, log: console });
 
   const meta = metaOf(result);
   assert.notEqual(meta.rerouted, true, "must not reroute to a target without credentials");
-  assert.ok(describeCalls.length >= 1, "deveria ter caído para o caminho de descrição");
+  assert.equal(result.block, true);
+  assert.equal(meta.rerouteFailed, true);
+  assert.equal(describeCalls.length, 0, "lossless reroute must not describe the image");
+  assert.deepEqual(body, original, "blocking must preserve the original request");
 });
 
 test("mode=reroute: forces reroute where auto mode would keep the credentialed model", async () => {

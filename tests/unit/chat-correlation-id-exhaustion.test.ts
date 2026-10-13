@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import ts from "typescript";
 
 const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "omniroute-exhaustion-id-"));
 process.env.DATA_DIR = TEST_DATA_DIR;
@@ -81,10 +82,41 @@ test("exhaustion lines carry the request id", async (t) => {
     );
     // The fallback-path sender (:2383) carries the full options literal —
     // persist flag, combo flag, headers AND the id together.
-    assert.match(
-      chatSource,
-      /buildExhaustionOptions\(runtimeOptions\.correlationId \?\? null, \{\s*persistUnavailableState: !\([\s\S]*?headers: result\.response\.headers,\s*\}\)/,
-      "chat.ts:2383 fallback sender must forward the id alongside the existing options literal"
+    const ast = ts.createSourceFile("chat.ts", chatSource, ts.ScriptTarget.Latest, true);
+    let fallbackProperties: Set<string> | undefined;
+    function visit(node: ts.Node) {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(ast) === "buildExhaustionOptions" &&
+        node.arguments[0]?.getText(ast).replace(/\s/g, "") ===
+          "runtimeOptions.correlationId??null" &&
+        node.arguments[1] &&
+        ts.isObjectLiteralExpression(node.arguments[1])
+      ) {
+        const properties = node.arguments[1].properties.filter(ts.isPropertyAssignment);
+        if (
+          properties.some(
+            (property) =>
+              property.name.getText(ast) === "headers" &&
+              property.initializer.getText(ast) === "result.response.headers"
+          )
+        ) {
+          fallbackProperties = new Set(
+            node.arguments[1].properties
+              .filter(
+                (property) =>
+                  ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)
+              )
+              .map((property) => property.name.getText(ast))
+          );
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(ast);
+    assert.ok(
+      fallbackProperties?.has("persistUnavailableState") && fallbackProperties.has("isCombo"),
+      "fallback sender must forward its correlation id, persist flag, combo flag and headers"
     );
     // The exhaustion caller passes the id positionally (10th arg), not a bare
     // request id from another scope.

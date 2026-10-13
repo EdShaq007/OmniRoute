@@ -2390,7 +2390,7 @@ test("gemini-web validator: 200 from gemini.google.com → valid", async () => {
     const headers = init.headers || {};
     if (target.includes("gemini.google.com/app")) {
       assert.match((headers as Record<string, string>).Cookie || "", /__Secure-1PSID=eyJPSID/);
-      return new Response("ok", { status: 200 });
+      return new Response('{"SNlM0e":"fixture-session-token"}', { status: 200 });
     }
     throw new Error(`unexpected fetch: ${target}`);
   };

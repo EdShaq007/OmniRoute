@@ -275,13 +275,16 @@ describe("API Routes — dashboard and tool consumers", () => {
     const quotaSkill = readProjectFile("src/lib/a2a/skills/quotaManagement.ts");
     const mcpAdvancedTools = readProjectFile("open-sse/mcp-server/tools/advancedTools.ts");
     const mcpServer = readProjectFile("open-sse/mcp-server/server.ts");
+    const mcpSchemas = readProjectFile("open-sse/mcp-server/schemas/tools.ts");
 
     assert.ok(quotaSkill, "quotaManagement skill should exist");
     assert.ok(mcpAdvancedTools, "advanced MCP tools should exist");
     assert.ok(mcpServer, "MCP server should exist");
     assert.match(quotaSkill, /\/api\/usage\/quota/);
     assert.match(mcpAdvancedTools, /\/api\/usage\/quota/);
-    assert.match(mcpServer, /\/api\/usage\/quota/);
+    assert.match(mcpServer, /handleCheckQuota\(checkQuotaInput\.parse\(args\)\)/);
+    assert.match(mcpServer, /from "\.\/schemas\/tools\.ts"/);
+    assert.match(mcpSchemas, /sourceEndpoints: \["\/api\/usage\/quota"/);
     assertRouteMethods("src/app/api/usage/quota/route.ts", ["GET"]);
   });
 
