@@ -432,6 +432,10 @@ function convertStopReason(reason) {
       return "tool_calls";
     case "stop_sequence":
       return "stop";
+    case "refusal":
+      return "content_filter";
+    case "model_context_window_exceeded":
+      return "length";
     default:
       return "stop";
   }
