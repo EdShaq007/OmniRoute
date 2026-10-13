@@ -182,6 +182,7 @@
       "tests/unit/chatcore-imports-cleanly.test.ts",
       "tests/unit/chatcore-log-truncation.test.ts",
       "tests/unit/chatcore-memory-extraction.test.ts",
+      "tests/unit/memory-extraction-pii-sanitization.test.ts",
       "tests/unit/chatcore-memory-skills-injection.test.ts",
       "tests/unit/chatcore-non-streaming-sse.test.ts",
       "tests/unit/chatcore-passthrough-tool-names.test.ts",
