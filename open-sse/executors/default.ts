@@ -675,6 +675,17 @@ export class DefaultExecutor extends BaseExecutor {
 
     headers["Accept"] = stream ? "text/event-stream" : "application/json";
 
+    // Forward client request metadata headers (from OpenCode or similar clients).
+    // Allowlist-based: x-opencode-* (always) plus agent-metadata headers
+    // (x-session-id, x-title, http-referer — AGENT_METADATA_HEADER_KEYS in
+    // utils/opencodeHeaders.ts; this second set is what
+    // OMNIROUTE_FORWARD_ATTRIBUTION=0 turns off). The caller's User-Agent is
+    // NOT forwarded (#15632). Runs BEFORE the operator's custom headers below,
+    // so an operator-pinned header wins on conflict.
+    if (clientHeaders) {
+      forwardOpencodeClientHeaders(headers, clientHeaders, { forwardUserAgent: false });
+    }
+
     const isCompatibleProvider =
       this.provider?.startsWith?.("openai-compatible-") ||
       this.provider?.startsWith?.("anthropic-compatible-");
@@ -683,11 +694,7 @@ export class DefaultExecutor extends BaseExecutor {
       applyCustomHeaders(headers, credentials.providerSpecificData?.customHeaders);
     }
 
-    // Forward client request metadata headers (from OpenCode or similar clients)
-    // Allowlist-based: x-opencode-* headers only; the caller's User-Agent is NOT forwarded (#15632)
     if (clientHeaders) {
-      forwardOpencodeClientHeaders(headers, clientHeaders, { forwardUserAgent: false });
-
       // #3974: merge the client's negotiated anthropic-beta (allowlisted) into the
       // outbound set. The registry's static ANTHROPIC_BETA_CLAUDE_OAUTH lacks
       // tool-search-tool-2025-10-19, so deferred-tool requests were rejected with
