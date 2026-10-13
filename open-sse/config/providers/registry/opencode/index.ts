@@ -11,6 +11,7 @@ export const opencodeProvider: RegistryEntry = {
   authHeader: "Authorization",
   authPrefix: "Bearer",
   passthroughModels: true,
+  toolCalling: "emulated",
   defaultContextLength: 200000,
   models: [
     // #2900: big-pickle's upstream runs DeepSeek thinking mode — declare the
