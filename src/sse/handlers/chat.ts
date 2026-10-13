@@ -85,6 +85,7 @@ import { dispatchChatWithAffinityEviction } from "./chatDispatch";
 import { getCachedSettings, getCombosCacheVersion } from "@/lib/db/readCache";
 import { comboCheckProvider, ghComboGate } from "./chat/githubLiveCatalogFilter.ts";
 import { markEmergencyFallback } from "./emergencyFallbackHeader.ts";
+import { resolveEmergencyFallbackDecision } from "./emergencyFallbackHeader.ts";
 import { evaluateComboTargetPreflight } from "./chat/comboTargetKeyPolicy.ts";
 import * as resolvedPolicy from "./chat/resolvedModelPolicy.ts";
 import { recordGateRejection, recordQuotaParkedSkip } from "./quotaParkedSkipUsage";
@@ -181,10 +182,7 @@ import {
   isSessionRegisteredForKey,
 } from "@omniroute/open-sse/services/sessionManager.ts";
 import { startQuotaMonitor } from "@omniroute/open-sse/services/quotaMonitor.ts";
-import {
-  isFallbackDecision,
-  shouldUseFallback,
-} from "@omniroute/open-sse/services/emergencyFallback.ts";
+import { isFallbackDecision } from "@omniroute/open-sse/services/emergencyFallback.ts";
 import {
   registerCodexConnection,
   registerCodexQuotaFetcher,
@@ -2454,10 +2452,11 @@ async function handleSingleModelChat(
       // (target-level orchestration plus the global fallback #689 after it), and a
       // per-target hop burns extra upstream calls against exhausted providers (#1731).
       if (!runtimeOptions.emergencyFallbackTried && !comboName) {
-        const fallbackDecision = shouldUseFallback(
+        const fallbackDecision = await resolveEmergencyFallbackDecision(
           Number(result.status || 0),
           String(result.error || ""),
-          Array.isArray(body?.tools) && body.tools.length > 0
+          Array.isArray(body?.tools) && body.tools.length > 0,
+          runtimeOptions
         );
 
         if (isFallbackDecision(fallbackDecision)) {
