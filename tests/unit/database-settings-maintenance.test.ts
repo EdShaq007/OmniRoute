@@ -212,6 +212,83 @@ test("database optimization rejects negative cache size through the API", async 
   assert.equal(response.status, 400);
 });
 
+test("database settings patch accepts a single retention field and keeps the rest", async () => {
+  const before = databaseSettings.getUserDatabaseSettings().retention;
+  const nextCallLogs = before.callLogs === 31 ? 32 : 31;
+  const response = await databaseSettingsRoute.PATCH(
+    makeJsonRequest("PATCH", {
+      retention: { callLogs: nextCallLogs },
+    }) as never
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.retention.callLogs, nextCallLogs);
+  for (const [key, value] of Object.entries(before)) {
+    if (key === "callLogs") continue;
+    assert.deepEqual(body.retention[key], value);
+  }
+  assert.equal(databaseSettings.getUserDatabaseSettings().retention.callLogs, nextCallLogs);
+});
+
+test("database settings patch rejects a below-minimum retention field naming the field", async () => {
+  const response = await databaseSettingsRoute.PATCH(
+    makeJsonRequest("PATCH", {
+      retention: { callLogs: 0 },
+    }) as never
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  const details = body?.error?.details;
+  assert.ok(Array.isArray(details));
+  assert.ok(details.some((detail: { field?: string }) => detail?.field === "retention.callLogs"));
+});
+
+test("database settings patch rejects an unknown top-level section", async () => {
+  const response = await databaseSettingsRoute.PATCH(
+    makeJsonRequest("PATCH", { inconnue: {} }) as never
+  );
+
+  assert.equal(response.status, 400);
+});
+
+test("database settings patch still accepts complete sections", async () => {
+  const current = databaseSettings.getUserDatabaseSettings();
+  const response = await databaseSettingsRoute.PATCH(
+    makeJsonRequest("PATCH", {
+      logs: { ...current.logs },
+      backup: { ...current.backup },
+      cache: { ...current.cache },
+      retention: { ...current.retention },
+      aggregation: { ...current.aggregation },
+      optimization: { ...current.optimization },
+    }) as never
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.retention.callLogs, current.retention.callLogs);
+});
+
+test("database settings patch accepts a single cache field and keeps the rest", async () => {
+  const before = databaseSettings.getUserDatabaseSettings().cache;
+  const nextMaxSize = before.semanticCacheMaxSize === 500 ? 600 : 500;
+  const response = await databaseSettingsRoute.PATCH(
+    makeJsonRequest("PATCH", {
+      cache: { semanticCacheMaxSize: nextMaxSize },
+    }) as never
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.cache.semanticCacheMaxSize, nextMaxSize);
+  for (const [key, value] of Object.entries(before)) {
+    if (key === "semanticCacheMaxSize") continue;
+    assert.deepEqual(body.cache[key], value);
+  }
+});
+
 test("database settings reader normalizes legacy negative cache size to the positive default", () => {
   const db = core.getDbInstance();
   db.prepare(
