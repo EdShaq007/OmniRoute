@@ -300,6 +300,7 @@ import {
 } from "../services/contextManager.ts";
 import { resolveBackgroundTaskRedirect } from "./chatCore/backgroundRedirect.ts";
 import { emitThinkingSignatureDiagnostics } from "./chatCore/thinkingSignatureDiagnostics.ts";
+import { inlineRemoteAttachments } from "./chatCore/inlineRemoteAttachments.ts";
 import type {
   CompressionConfig,
   CompressionPipelineStep,
@@ -2530,6 +2531,8 @@ async function handleChatCoreInner({
       // relocation paths carry the global prompt (baseline coverage of the
       // removed pre-translation pass). The gate writes ONE carrier only.
       translatedBody = injectSystemPromptPreTranslation(translatedBody, { targetFormat });
+      // targets that cannot fetch URLs get remote images/documents as base64.
+      translatedBody = await inlineRemoteAttachments(translatedBody, provider, targetFormat);
       translatedBody = translateRequest(
         sourceFormat,
         targetFormat,

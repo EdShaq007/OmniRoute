@@ -278,6 +278,21 @@ export function claudeToGeminiRequest(model, body, stream, credentials = null) {
                 parts.push(urlImagePart(block.source.url));
               }
               break;
+
+            // Claude `document` (PDF/text) was dropped for Gemini targets.
+            // Remote URLs were already inlined by chatCore/inlineRemoteAttachments.ts.
+            case "document":
+              if (block.source?.type === "base64") {
+                parts.push({
+                  inlineData: {
+                    mimeType: block.source.media_type || "application/pdf",
+                    data: block.source.data,
+                  },
+                });
+              } else if (block.source?.type === "text" && block.source.data) {
+                parts.push({ text: block.source.data });
+              }
+              break;
           }
         }
       } else if (typeof msg.content === "string" && msg.content) {

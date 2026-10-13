@@ -462,6 +462,30 @@ function convertClaudeMessage(msg, preserveCacheControl = false) {
           }
           break;
 
+        // Claude `document` blocks (PDF, text) were dropped on the way to
+        // OpenAI-format targets. Map them to the OpenAI `file` part / a text part.
+        case "document": {
+          const src = block.source || {};
+          const filename = typeof block.title === "string" ? block.title : undefined;
+          if (src.type === "base64" && typeof src.data === "string") {
+            parts.push({
+              type: "file",
+              file: {
+                ...(filename ? { filename } : {}),
+                file_data: `data:${src.media_type || "application/pdf"};base64,${src.data}`,
+              },
+            });
+          } else if (src.type === "url" && typeof src.url === "string") {
+            parts.push({
+              type: "file",
+              file: { ...(filename ? { filename } : {}), file_data: src.url },
+            });
+          } else if (src.type === "text" && typeof src.data === "string") {
+            parts.push({ type: "text", text: src.data });
+          }
+          break;
+        }
+
         case "thinking":
           reasoningContent = block.thinking || block.text || "";
           break;

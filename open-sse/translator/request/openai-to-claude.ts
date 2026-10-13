@@ -21,6 +21,11 @@ import {
   openAiImagePartToClaudeBlock,
   normalizeToolResultImages,
 } from "./openai-to-claude/imageBlocks.ts";
+import {
+  attachmentAsText,
+  isTextLikeMime,
+  unsupportedAttachment,
+} from "../helpers/unsupportedAttachment.ts";
 
 // Reasoning-effort levels Anthropic accepts on `output_config.effort`. Used to steer
 // adaptive-only Claude models (Opus 4.7+/Fable 5) without ever emitting a manual budget.
@@ -615,6 +620,14 @@ function getContentBlocksFromMessage(
                 type: "image",
                 source: { type: "base64", media_type: mediaType, data: fmatch[2] },
               });
+            } else if (isTextLikeMime(mediaType)) {
+              // Claude (and Copilot's /v1/messages) reject a `document`
+              // with source.type "text"; a plain text block always works.
+              blocks.push({ type: "text", text: attachmentAsText(part.file.filename, fmatch[2]) });
+            } else if (!/^(video|audio)\//i.test(mediaType)) {
+              // Video/audio stay skipped (the media bridges handle them upstream of here);
+              // any other document type (docx, xlsx...) would be silently lost.
+              throw unsupportedAttachment(mediaType, "Claude models");
             }
           } else if (typeof fileData === "string" && /^https?:\/\//i.test(fileData)) {
             blocks.push({

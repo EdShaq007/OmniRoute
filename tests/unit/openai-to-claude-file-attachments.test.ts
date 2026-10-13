@@ -68,3 +68,31 @@ test("openaiToClaudeRequest skips a video file block (Claude has no native video
     "the accompanying text part must still be forwarded"
   );
 });
+
+// Text files become a text block
+// (Copilot /v1/messages rejects document source.type "text"); unknown document
+// types are a 400 unsupported_attachment instead of a silent drop.
+test("openaiToClaudeRequest turns a text/plain file into a labelled text block", () => {
+  const b64 = Buffer.from("CODIGO LARANJA 7").toString("base64");
+  const blocks = userBlocks("claude-sonnet-4", [
+    { type: "file", file: { filename: "nota.txt", file_data: `data:text/plain;base64,${b64}` } },
+  ]);
+  assert.ok(!blocks.some((b) => b.type === "document"));
+  assert.ok(
+    blocks.some((b) => b.type === "text" && b.text === "[Arquivo: nota.txt]\nCODIGO LARANJA 7")
+  );
+});
+
+test("openaiToClaudeRequest rejects a docx file with unsupported_attachment", () => {
+  const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  assert.throws(
+    () =>
+      userBlocks("claude-sonnet-4", [
+        { type: "file", file: { filename: "a.docx", file_data: `data:${docx};base64,UEsDBA==` } },
+      ]),
+    (err: Error & { statusCode?: number; errorType?: string }) =>
+      err.statusCode === 400 &&
+      err.errorType === "unsupported_attachment" &&
+      err.message.includes(docx)
+  );
+});

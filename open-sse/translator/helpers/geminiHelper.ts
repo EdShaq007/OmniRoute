@@ -1,6 +1,11 @@
 // Gemini helper functions for translator
 
 import { safeParseJSON } from "./jsonUtil.ts";
+import {
+  attachmentAsText,
+  isTextLikeMime,
+  unsupportedAttachment,
+} from "./unsupportedAttachment.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -263,6 +268,15 @@ export function convertOpenAIContentToParts(content: unknown): JsonRecord[] {
             }
           }
           const rawData = rawDataStr.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
+          // text files go as text; types Gemini cannot read (docx, xlsx...)
+          // are a 400 here instead of an upstream error or a silently ignored part.
+          if (isTextLikeMime(String(mimeType))) {
+            parts.push({ text: attachmentAsText(rec.filename || file?.filename, rawData) });
+            continue;
+          }
+          if (!/^(image|video|audio)\/|^application\/pdf$/i.test(String(mimeType))) {
+            throw unsupportedAttachment(String(mimeType), "Gemini models");
+          }
           parts.push({
             inlineData: {
               mimeType: String(mimeType),
